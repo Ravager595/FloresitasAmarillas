@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Para mi cerezita</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --negro: #000000;
+      --blanco: #ffffff;
+      --carmesi: #dc143c;
+      --carmesi-claro: #e8385b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--negro);
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* Marco 9:16: en celular ocupa toda la pantalla,
+       en computadora se centra como una pantalla vertical. */
+    .escena {
+      position: relative;
+      aspect-ratio: 9 / 16;
+      height: 100%;
+      max-width: 100%;
+      background: var(--negro);
+      container-type: size;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Espacio entre el borde superior y el inicio del texto:
+       aquí vive el botón y luego el ramo. */
+    .cielo {
+      position: relative;
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .ramo {
+      position: absolute;
+      inset: calc(4cqh + env(safe-area-inset-top, 0px)) 6cqw 3cqh;
+      pointer-events: none;
+    }
+
+    /* ---------- Botón ---------- */
+    .boton {
+      font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+      font-weight: 600;
+      font-size: clamp(14px, 4.3cqw, 21px);
+      letter-spacing: 0.02em;
+      color: var(--blanco);
+      background: var(--carmesi);
+      border: 0;
+      border-radius: 999px;
+      padding: 0.95em 2em;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+
+      opacity: 0;
+      animation:
+        aparecer 1.4s ease-out 3.2s forwards,
+        pulso 2.8s ease-out 4.8s infinite;
+      transition: background-color 0.25s ease, transform 0.15s ease;
+    }
+    .boton:hover { background: var(--carmesi-claro); }
+    .boton:active { transform: scale(0.97); }
+    .boton:focus-visible {
+      outline: 2px solid var(--blanco);
+      outline-offset: 4px;
+    }
+    .boton[hidden] { display: none; }
+    .boton.saliendo {
+      animation: desvanecer 0.5s ease forwards;
+      pointer-events: none;
+    }
+
+    /* ---------- Mensaje ---------- */
+    .mensaje {
+      flex: none;
+      width: 100%;
+      padding:
+        0
+        9cqw
+        calc(11cqh + env(safe-area-inset-bottom, 0px));
+      text-align: center;
+      color: var(--blanco);
+      font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+      font-weight: 600;
+      font-size: clamp(15px, 5.2cqw, 30px);
+      line-height: 1.6;
+      text-wrap: balance;
+
+      opacity: 0;
+      animation: aparecer 2.4s ease-out 0.6s forwards;
+    }
+
+    /* ---------- Piezas del ramo (para animar desde su base) ---------- */
+    .p { transform-box: fill-box; transform-origin: 50% 100%; }
+    .c { transform-box: fill-box; transform-origin: 50% 50%; }
+    .h { transform-box: fill-box; transform-origin: 0% 55%; }
+    .tallo { stroke-dasharray: 1; stroke-dashoffset: 0; }
+
+    @keyframes aparecer { to { opacity: 1; } }
+    @keyframes desvanecer {
+      from { opacity: 1; transform: scale(1); }
+      to   { opacity: 0; transform: scale(0.96); }
+    }
+    @keyframes pulso {
+      0%   { box-shadow: 0 0 0 0 rgba(220, 20, 60, 0.55); }
+      70%, 100% { box-shadow: 0 0 0 18px rgba(220, 20, 60, 0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .mensaje, .boton { animation: none; opacity: 1; }
+      .boton.saliendo { animation: none; opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="escena">
+    <div class="cielo">
+      <button class="boton" id="boton" type="button">Presiona para continuar</button>
+      <div class="ramo" id="ramo"></div>
+    </div>
+
+    <p class="mensaje" id="mensaje" aria-live="polite">
+      Hola mi cerezita linda, espero que esta página te guste.
+      Llevo unos días trabajando en esto y la verdad es que no tengo mucho dinero para darte flores...
+      así que te entrego este ramo digital pero sincero.
+    </p>
+  </main>
+
+  <script>
+    const NS = "http://www.w3.org/2000/svg";
+    const reducir = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    /* ---------- Utilidades ---------- */
+    function el(tag, attrs, padre) {
+      const n = document.createElementNS(NS, tag);
+      for (const k in attrs) n.setAttribute(k, attrs[k]);
+      if (padre) padre.appendChild(n);
+      return n;
+    }
+
+    function grupo(padre, x, y) {
+      return el("g", { transform: `translate(${x} ${y})` }, padre);
+    }
+
+    // Un pétalo: su base queda en el centro de la flor y apunta hacia arriba;
+    // el grupo exterior lo gira al ángulo que toque.
+    function petalo(padre, d, ang, fill, stroke, desplazar = 0) {
+      const g = el("g", { transform: `rotate(${ang}) translate(0 ${-desplazar})` }, padre);
+      return el("path", {
+        d, fill, stroke,
+        "stroke-width": 0.7,
+        "stroke-linejoin": "round",
+        class: "p"
+      }, g);
+    }
+
+    const f = (n) => Number(n.toFixed(2));
+
+    const FORMA = {
+      girasol:   (L) => `M0,0 C${f(-L*.26)},${f(-L*.2)} ${f(-L*.22)},${f(-L*.74)} 0,${-L} C${f(L*.22)},${f(-L*.74)} ${f(L*.26)},${f(-L*.2)} 0,0Z`,
+      margarita: (L) => `M0,0 C${f(-L*.15)},${f(-L*.25)} ${f(-L*.15)},${f(-L*.8)} 0,${-L} C${f(L*.15)},${f(-L*.8)} ${f(L*.15)},${f(-L*.25)} 0,0Z`,
+      narciso:   (L) => `M0,0 C${f(-L*.42)},${f(-L*.25)} ${f(-L*.4)},${f(-L*.85)} 0,${-L} C${f(L*.4)},${f(-L*.85)} ${f(L*.42)},${f(-L*.25)} 0,0Z`,
+      rosa:      (s) => `M0,-2 C${f(-s*.95)},${f(-s*.15)} ${f(-s*.95)},${f(-s*1.15)} 0,${f(-s*1.2)} C${f(s*.95)},${f(-s*1.15)} ${f(s*.95)},${f(-s*.15)} 0,-2Z`,
+      tulipan:   (w, h) => `M0,0 C${-w},${f(-h*.1)} ${-w},${f(-h*.7)} 0,${-h} C${w},${f(-h*.7)} ${w},${f(-h*.1)} 0,0Z`,
+      hoja:      (L) => `M0,0 C${f(L*.2)},${f(-L*.24)} ${f(L*.62)},${f(-L*.3)} ${L},${f(-L*.05)} C${f(L*.64)},${f(L*.18)} ${f(L*.22)},${f(L*.2)} 0,0Z`
+    };
+
+    function ondulado(r, amp, n) {
+      let d = "";
+      for (let i = 0; i <= 120; i++) {
+        const t = (i / 120) * 2 * Math.PI;
+        const rr = r + amp * Math.sin(n * t);
+        d += (i ? "L" : "M") + f(rr * Math.cos(t)) + "," + f(rr * Math.sin(t));
+      }
+      return d + "Z";
+    }
+
+    /* ---------- Animación ---------- */
+    function crecer(nodo, retraso, dur) {
+      if (reducir) return;
+      nodo.animate(
+        [
+          { transform: "scale(0)", opacity: 0 },
+          { transform: "scale(1.12)", opacity: 1, offset: 0.65 },
+          { transform: "scale(1)", opacity: 1 }
+        ],
+        { duration: dur, delay: retraso, easing: "cubic-bezier(.22,.9,.3,1)", fill: "backwards" }
+      );
+    }
+
+    // Programa las piezas de una flor según su "rank": una tras otra.
+    function programar(partes, inicio, paso, dur = 460) {
+      let fin = inicio;
+      for (const { n, rank } of partes) {
+        const retraso = inicio + rank * paso;
+        crecer(n, retraso, dur);
+        fin = Math.max(fin, retraso + dur);
+      }
+      return fin;
+    }
+
+    /* ---------- Las flores ---------- */
+    function girasol(padre, x, y) {
+      const g = grupo(padre, x, y), partes = [], N = 14;
+      for (let i = 0; i < N; i++)
+        partes.push({ n: petalo(g, FORMA.girasol(46), i * 360 / N, "#f0a500", "#c98600"), rank: 1 + 2 * i });
+      for (let i = 0; i < N; i++)
+        partes.push({ n: petalo(g, FORMA.girasol(38), (i + .5) * 360 / N, "#ffc61a", "#e0a000"), rank: 2 + 2 * i });
+
+      const c = el("g", { class: "c" }, g);
+      el("circle", { r: 17, fill: "#4b2e12" }, c);
+      el("circle", { r: 13, fill: "#5f3a17" }, c);
+      for (let i = 1; i <= 40; i++) {
+        const a = i * 137.508 * Math.PI / 180, r = 1.85 * Math.sqrt(i);
+        el("circle", { cx: f(r * Math.cos(a)), cy: f(r * Math.sin(a)), r: 1.2, fill: "#2a1607" }, c);
+      }
+      partes.push({ n: c, rank: 0 });
+      return { partes, paso: 55 };
+    }
+
+    function margarita(padre, x, y) {
+      const g = grupo(padre, x, y), partes = [], N = 16;
+      for (let i = 0; i < N; i++)
+        partes.push({ n: petalo(g, FORMA.margarita(32), i * 360 / N, "#ffe45c", "#e8bf00"), rank: 1 + i });
+
+      const c = el("g", { class: "c" }, g);
+      el("circle", { r: 8.5, fill: "#f2a20c" }, c);
+      el("circle", { cx: -1, cy: -1, r: 4.6, fill: "#ffc22e" }, c);
+      partes.push({ n: c, rank: 0 });
+      return { partes, paso: 65 };
+    }
+
+    function rosa(padre, x, y) {
+      const g = grupo(padre, x, y), partes = [];
+      // De afuera hacia adentro en el dibujo; florece de adentro hacia afuera.
+      for (let i = 0; i < 5; i++)
+        partes.push({ n: petalo(g, FORMA.rosa(28), i * 72, "#ffd34d", "#dda400", 6), rank: 8 + i });
+      for (let i = 0; i < 4; i++)
+        partes.push({ n: petalo(g, FORMA.rosa(21), 36 + i * 90, "#ffc933", "#d99c00", 4), rank: 4 + i });
+      for (let i = 0; i < 3; i++)
+        partes.push({ n: petalo(g, FORMA.rosa(13), 20 + i * 120, "#f7b71c", "#cf8f00", 2), rank: 1 + i });
+
+      const c = el("g", { class: "c" }, g);
+      el("circle", { r: 4, fill: "#e6a010" }, c);
+      el("path", { d: "M-3,-1 C-3,-5 4,-5 4,0", fill: "none", stroke: "#c88400", "stroke-width": 0.9, "stroke-linecap": "round" }, c);
+      partes.push({ n: c, rank: 0 });
+      return { partes, paso: 105 };
+    }
+
+    function narciso(padre, x, y) {
+      const g = grupo(padre, x, y), partes = [];
+      for (let i = 0; i < 6; i++)
+        partes.push({ n: petalo(g, FORMA.narciso(30), i * 60, "#ffe585", "#e6bc1e"), rank: i });
+
+      const c = el("g", { class: "c" }, g);
+      el("path", { d: ondulado(11, 1.4, 10), fill: "#f4a11d", stroke: "#d98a0a", "stroke-width": 0.8 }, c);
+      el("circle", { r: 6, fill: "#d87f0b" }, c);
+      partes.push({ n: c, rank: 6 });
+      return { partes, paso: 130 };
+    }
+
+    function tulipan(padre, x, y) {
+      const g = grupo(padre, x, y), partes = [];
+      const p = [
+        [-22, 17, 58, "#efa400", 0],
+        [ 22, 17, 58, "#efa400", 1],
+        [-10, 18, 58, "#ffbe11", 2],
+        [ 10, 18, 58, "#ffbe11", 3],
+        [  0, 19, 56, "#ffd83d", 4]
+      ];
+      for (const [ang, w, h, col, rank] of p)
+        partes.push({ n: petalo(g, FORMA.tulipan(w, h), ang, col, "#d89800"), rank });
+      return { partes, paso: 170 };
+    }
+
+    /* ---------- El ramo ---------- */
+    function florecer() {
+      const caja = document.getElementById("ramo");
+      const svg = el("svg", {
+        viewBox: "0 0 300 350",
+        role: "img",
+        "aria-label": "Ramo de flores amarillas"
+      }, caja);
+      svg.style.cssText = "width:100%;height:100%;display:block;overflow:visible";
+
+      const capaHojas = el("g", {}, svg);
+      const capaTallos = el("g", {}, svg);
+      const capaLazo = el("g", {}, svg);
+      const capaFlores = el("g", {}, svg);
+
+      // Hojas
+      const hojas = [
+        { x: 150, y: 292, rot: -152, L: 66, col: "#2f7d3f" },
+        { x: 150, y: 292, rot: -28,  L: 66, col: "#3e9148" },
+        { x: 150, y: 300, rot: -104, L: 84, col: "#3e9148" },
+        { x: 150, y: 300, rot: -76,  L: 84, col: "#2f7d3f" }
+      ];
+      hojas.forEach((h, i) => {
+        const g = el("g", { transform: `translate(${h.x} ${h.y}) rotate(${h.rot})` }, capaHojas);
+        const p = el("path", { d: FORMA.hoja(h.L), fill: h.col, class: "h" }, g);
+        crecer(p, 150 + i * 90, 650);
+      });
+
+      // Flores: posición y orden de floración
+      const flores = [
+        { fn: girasol,   x: 86,  y: 116 },
+        { fn: margarita, x: 150, y: 46  },
+        { fn: rosa,      x: 212, y: 116 },
+        { fn: narciso,   x: 76,  y: 204 },
+        { fn: tulipan,   x: 226, y: 230 }
+      ];
+
+      // Tallos: crecen desde el amarre hacia cada flor
+      flores.forEach((fl, i) => {
+        const y1 = 330 - (330 - fl.y) * 0.5;
+        const y2 = fl.y + (330 - fl.y) * 0.35;
+        const t = el("path", {
+          d: `M150,330 C150,${f(y1)} ${fl.x},${f(y2)} ${fl.x},${fl.y}`,
+          fill: "none", stroke: "#3b7d3a", "stroke-width": 3.2,
+          "stroke-linecap": "butt", pathLength: 1, class: "tallo"
+        }, capaTallos);
+        if (!reducir)
+          t.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }],
+            { duration: 900, delay: 150 + i * 70, easing: "ease-out", fill: "backwards" });
+      });
+
+      // Listón carmesí que amarra los tallos
+      const lazo = el("g", { transform: "translate(150 304)" }, capaLazo);
+      const lz = el("g", { class: "c" }, lazo);
+      el("path", { d: "M0,4 C-6,16 -10,28 -16,40 L-7,42 C-2,32 2,20 3,4Z", fill: "#b80f32" }, lz);
+      el("path", { d: "M0,4 C6,16 10,28 16,40 L7,42 C2,32 -2,20 -3,4Z", fill: "#c51239" }, lz);
+      el("rect", { x: -15, y: -8, width: 30, height: 14, rx: 3, fill: "#dc143c" }, lz);
+      el("circle", { r: 5.5, cy: -1, fill: "#e8385b" }, lz);
+      crecer(lz, 950, 550);
+
+      // Las flores florecen una tras otra, pétalo por pétalo
+      let reloj = 1250;
+      for (const fl of flores) {
+        const { partes, paso } = fl.fn(capaFlores, fl.x, fl.y);
+        reloj = programar(partes, reloj, paso) + 150;
+      }
+    }
+
+    /* ---------- Botón ---------- */
+    const boton = document.getElementById("boton");
+    const mensaje = document.getElementById("mensaje");
+    const pausa = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+    // El texto se desvanece despacio, cambia, y vuelve a aparecer despacio.
+    async function cambiarMensaje(nuevo) {
+      if (reducir) { mensaje.textContent = nuevo; return; }
+      const sale = mensaje.animate(
+        [{ opacity: 1 }, { opacity: 0 }],
+        { duration: 1600, easing: "ease-in-out", fill: "forwards" }
+      );
+      await sale.finished;
+      mensaje.textContent = nuevo;
+      const entra = mensaje.animate(
+        [{ opacity: 0 }, { opacity: 1 }],
+        { duration: 1800, easing: "ease-in-out", fill: "forwards" }
+      );
+      await entra.finished;
+      sale.cancel();
+    }
+
+    boton.addEventListener("click", async () => {
+      boton.disabled = true;
+      boton.classList.add("saliendo");
+      setTimeout(() => { boton.hidden = true; }, reducir ? 0 : 500);
+
+      await cambiarMensaje("Te adoro 💛");
+      await pausa(reducir ? 0 : 400);
+      florecer();
+    });
+  </script>
+</body>
+</html>
